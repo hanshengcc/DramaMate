@@ -22,5 +22,8 @@ output*.mp4
 # 版权素材：抖音下载的样片不入库；仓库仅保留无版权的 demo_free.mp4
 /demo/demo.mp4
 
+# 商业/产品规划（不进开源公开仓库）
+/planning/
+
 # 系统
 .DS_Store
