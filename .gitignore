@@ -12,6 +12,9 @@ output*.mp4
 # 自带的静态 ffmpeg 二进制（~80MB，不入库；按需各自下载）
 /bin/
 
+# GoReleaser 构建输出
+/dist/
+
 # 凭证 / 环境
 .env
 *.local

@@ -1,0 +1,60 @@
+# GoReleaser 配置：tag 推送时跨平台构建 dramamate 并发布 release。
+# 本地校验： goreleaser check   /   goreleaser release --snapshot --clean
+version: 2
+
+project_name: dramamate
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: dramamate
+    main: .
+    binary: dramamate
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # version 注入到 main.version。
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ---
+    **注意**：DramaMate 运行时依赖本机 `ffmpeg`（需带 libass）。二进制不内置 ffmpeg。

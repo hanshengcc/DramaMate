@@ -1,0 +1,33 @@
+name: release
+
+# 推送形如 v1.2.3 的 tag 时，跨平台构建并发布 GitHub Release。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # 创建 Release、上传产物需要
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # GoReleaser 需要完整历史生成 changelog
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          check-latest: true
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

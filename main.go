@@ -671,12 +671,19 @@ func escapeForFilter(p string) string {
 // main：CLI 入口
 // ---------------------------------------------------------------------------
 
+// version 由发布时通过 -ldflags "-X main.version=..." 注入；本地构建为 dev。
+var version = "dev"
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "用法: %s <input.mp4>\n产出 output.mp4 + metadata.json 到 WorkDir，上传由 assa 负责。\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(os.Stderr, "DramaMate %s\n用法: %s <input.mp4>\n产出 output.mp4 + metadata.json 到 WorkDir，上传由 assa 负责。\n", version, filepath.Base(os.Args[0]))
 		os.Exit(2)
+	}
+	if a := os.Args[1]; a == "version" || a == "-v" || a == "--version" {
+		fmt.Printf("DramaMate %s\n", version)
+		return
 	}
 	inputPath := os.Args[1]
 
