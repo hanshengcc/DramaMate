@@ -592,44 +592,8 @@ func burnSubtitleAndDedup(ctx context.Context, cfg *Config, inputPath, srtPath, 
 	}
 	subtitles := buildSubtitlesFilter(escapedSRT, subOrigSize, marginV)
 
-	const eq = "eq=brightness=0.01:contrast=1.02"
-	var filterComplex string
-	switch cfg.VideoMode {
-	case "original":
-		filterComplex = "[0:v]" + eq + "," + subtitles + "[v]"
-
-	case "crop":
-		// 放大裁切铺满：等比放大到至少覆盖 1080x1920，再居中裁切。
-		filterComplex = "[0:v]scale=1080:1920:force_original_aspect_ratio=increase," +
-			"crop=1080:1920," + eq + "," + subtitles + "[v]"
-
-	case "pad", "colorpad":
-		// 等比缩放 + 自定义边色补齐（居中）。
-		filterComplex = fmt.Sprintf(
-			"[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,"+
-				"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:%s,%s,%s[v]",
-			cfg.PadColor, eq, subtitles)
-
-	case "caption":
-		// 画面靠上（y=120），底部留色条放大字幕。
-		filterComplex = fmt.Sprintf(
-			"[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,"+
-				"pad=1080:1920:(ow-iw)/2:120:%s,%s,%s[v]",
-			cfg.PadColor, eq, subtitles)
-
-	default: // blur：竖屏模糊背景填充
-		fgW, fgH := 1080, 1920
-		if frac, err := strconv.ParseFloat(cfg.FgScale, 64); err == nil && frac > 0 && frac <= 1.0 {
-			fgW = int(1080 * frac)
-			fgH = int(1920 * frac)
-		}
-		filterComplex = fmt.Sprintf(
-			"[0:v]split=2[bg][fg];"+
-				"[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=%s[bgb];"+
-				"[fg]scale=%d:%d:force_original_aspect_ratio=decrease[fgs];"+
-				"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,%s,%s[v]",
-			cfg.BlurSigma, fgW, fgH, eq, subtitles)
-	}
+	// 画布几何唯一来源：烧录在其后接 subtitles，预览直接复用（见 canvasBodyVF）。
+	filterComplex := "[0:v]" + canvasBodyVF(cfg) + "," + subtitles + "[v]"
 
 	args := []string{
 		"-y",
@@ -667,6 +631,78 @@ func escapeForFilter(p string) string {
 	return p
 }
 
+// canvasBodyVF 返回画布几何滤镜链（不含 [0:v]/[v] 标签，不含字幕），末尾带去重 eq。
+// 这是「画布几何」的唯一来源：
+//   - 烧录(filter_complex)：用 "[0:v]" + canvasBodyVF + ",subtitles[v]"
+//   - 预览(-vf)：直接把本串作为 -vf 参数（单进单出、无标签）
+//
+// 注意 blur 用 split/overlay 多链路；该写法在 -vf 与 filter_complex 下均可用。
+func canvasBodyVF(cfg *Config) string {
+	const eq = "eq=brightness=0.01:contrast=1.02"
+	switch cfg.VideoMode {
+	case "original":
+		return eq
+	case "crop":
+		return "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920," + eq
+	case "pad", "colorpad":
+		return fmt.Sprintf("scale=1080:1920:force_original_aspect_ratio=decrease,"+
+			"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:%s,%s", cfg.PadColor, eq)
+	case "caption":
+		return fmt.Sprintf("scale=1080:1920:force_original_aspect_ratio=decrease,"+
+			"pad=1080:1920:(ow-iw)/2:120:%s,%s", cfg.PadColor, eq)
+	default: // blur
+		fgW, fgH := 1080, 1920
+		if frac, err := strconv.ParseFloat(cfg.FgScale, 64); err == nil && frac > 0 && frac <= 1.0 {
+			fgW = int(1080 * frac)
+			fgH = int(1920 * frac)
+		}
+		return fmt.Sprintf("split=2[bg][fg];"+
+			"[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=%s[bgb];"+
+			"[fg]scale=%d:%d:force_original_aspect_ratio=decrease[fgs];"+
+			"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,%s", cfg.BlurSigma, fgW, fgH, eq)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 预览能力（供 SaaS 加工页"选择构图"用：单帧/秒级、跳过转录翻译）
+// ---------------------------------------------------------------------------
+
+// previewFrame 在 ts 处抽一帧，按当前 VideoMode 应用画布几何，输出 PNG。
+// 不烧字幕（字幕条由前端 UI 叠加），不跑转录/翻译——成本极低、亚秒级。
+func previewFrame(ctx context.Context, cfg *Config, inputPath, ts, outPath string) error {
+	args := []string{
+		"-y",
+		"-ss", ts,
+		"-i", inputPath,
+		"-vf", canvasBodyVF(cfg),
+		"-frames:v", "1",
+		outPath,
+	}
+	return runFFmpeg(ctx, cfg, "preview-"+cfg.VideoMode, args)
+}
+
+// allVideoModes 是 SaaS 选择器要展示的全部画布模式。
+var allVideoModes = []string{"blur", "crop", "pad", "colorpad", "caption", "original"}
+
+// previewAllModes 在 ts 处为全部模式各渲染一张预览图，输出到 outDir/preview_<mode>.png。
+// 对应加工页 L1「单帧网格」：一次抽帧、逐模式出缩略图。
+func previewAllModes(ctx context.Context, cfg *Config, inputPath, ts, outDir string) ([]string, error) {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建预览目录: %w", err)
+	}
+	var out []string
+	for _, mode := range allVideoModes {
+		mc := *cfg
+		mc.VideoMode = mode
+		p := filepath.Join(outDir, "preview_"+mode+".png")
+		if err := previewFrame(ctx, &mc, inputPath, ts, p); err != nil {
+			return out, fmt.Errorf("预览 %s: %w", mode, err)
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // ---------------------------------------------------------------------------
 // main：CLI 入口
 // ---------------------------------------------------------------------------
@@ -681,10 +717,39 @@ func main() {
 		fmt.Fprintf(os.Stderr, "DramaMate %s\n用法: %s <input.mp4>\n产出 output.mp4 + metadata.json 到 WorkDir；上传不在本工具范围。\n", version, filepath.Base(os.Args[0]))
 		os.Exit(2)
 	}
-	if a := os.Args[1]; a == "version" || a == "-v" || a == "--version" {
+	switch os.Args[1] {
+	case "version", "-v", "--version":
 		fmt.Printf("DramaMate %s\n", version)
 		return
+	case "preview":
+		// 用法: dramamate preview <input.mp4> [ts=0:03]
+		// 为全部画布模式各出一张预览图到 WorkDir/preview/，供加工页选择器用。
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "用法: %s preview <input.mp4> [ts]\n", filepath.Base(os.Args[0]))
+			os.Exit(2)
+		}
+		ts := "0:03"
+		if len(os.Args) >= 4 {
+			ts = os.Args[3]
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		cfg, err := loadConfig()
+		if err != nil {
+			slog.Error("加载配置", "err", err)
+			os.Exit(1)
+		}
+		paths, err := previewAllModes(ctx, cfg, os.Args[2], ts, filepath.Join(cfg.WorkDir, "preview"))
+		if err != nil {
+			slog.Error("预览失败", "err", err)
+			os.Exit(1)
+		}
+		for _, p := range paths {
+			fmt.Println(p)
+		}
+		return
 	}
+
 	inputPath := os.Args[1]
 
 	// 全链路 30 分钟超时上限，可被信号/上游取消。

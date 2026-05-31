@@ -102,10 +102,14 @@ export DRAMA_VIDEO_MODE="blur"
 ## 命令行用法
 
 ```
-dramamate <input.mp4>
+dramamate <input.mp4>          # 全流程加工
+dramamate preview <input.mp4> [ts]   # 为全部画布模式各出一张预览图（默认 ts=0:03）
+dramamate version
 ```
 
-成功后在 `WorkDir` 产出：
+`preview` 在指定时间点抽一帧，对 6 种画布模式各渲染一张缩略图到 `WorkDir/preview/preview_<mode>.png`——只跑画面合成、跳过转录翻译，亚秒级、用于"选择构图"的可视预览（上层 SaaS 据此做选择器）。
+
+成功后（全流程）在 `WorkDir` 产出：
 
 ```
 output.mp4       # 加工后的成片
