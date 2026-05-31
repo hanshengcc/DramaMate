@@ -1,7 +1,7 @@
 // Package main 实现 DramaMate 短剧出海的本地加工管道。
 //
 // 职责边界：DramaMate 只负责「把一条中文短剧加工成可发布的成片+元数据」，
-// 上传/发布（OAuth2、平台 API）由下游 assa 产品负责，本项目不涉及。
+// 上传/发布（OAuth2、平台 API）不在本项目范围，由上层调用方处理。
 //
 // 管道（单条视频）：
 //
@@ -12,7 +12,7 @@
 //	                    └─[4] ffmpeg 硬烧录 + 竖屏 + 去重 -> output.mp4
 //	                          └─[5] LLM 生成标题/标签       -> metadata.json
 //
-// 产出 output.mp4 + metadata.json 交给 assa 消费。
+// 产出 output.mp4 + metadata.json 两个工件交给上层调用方消费。
 //
 // 设计原则：全程透传 context.Context（可取消/超时）；每一步显式 error
 // 包裹（fmt.Errorf("...: %w", err)）；外部命令与 HTTP 均受 ctx 控制。
@@ -106,8 +106,8 @@ var httpClient = &http.Client{
 	},
 }
 
-// Metadata 是管道产出的发布元数据，连同 output.mp4 一起交给下游
-// 上传产品（assa）消费。DramaMate 本身不负责上传。
+// Metadata 是管道产出的发布元数据，连同 output.mp4 一起交给上层
+// 调用方消费。DramaMate 本身不负责上传。
 type Metadata struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
@@ -121,7 +121,7 @@ type Metadata struct {
 
 // ProcessVideo 是整个本地加工管道的唯一入口：分离音频 -> 转录 -> 翻译 ->
 // 烧录竖屏去重 -> 生成元数据。产出 output.mp4 与 metadata.json 两个工件，
-// 上传/发布由下游 assa 产品负责，本项目不涉及。
+// 上传/发布不在本项目范围，由上层调用方处理。
 //
 // 参数：
 //   - ctx       : 控制超时 / 取消，贯穿所有子步骤。
@@ -179,7 +179,7 @@ func ProcessVideo(ctx context.Context, inputPath string) (string, error) {
 	}
 	log.Info("成片生成完成", "output", outputPath)
 
-	// —— 步骤 5：LLM 生成发布元数据并落盘（交给下游 assa 消费）——
+	// —— 步骤 5：LLM 生成发布元数据并落盘（供上层调用方消费）——
 	meta, err := generateMetadata(ctx, cfg, enSRT)
 	if err != nil {
 		return "", fmt.Errorf("步骤5[生成元数据]: %w", err)
@@ -191,7 +191,7 @@ func ProcessVideo(ctx context.Context, inputPath string) (string, error) {
 	}
 	log.Info("元数据已生成", "title", meta.Title, "tags", strings.Join(meta.Tags, ","), "metadata", metaPath)
 
-	log.Info("管道完成 ✅ 产出 output.mp4 + metadata.json，待 assa 上传")
+	log.Info("管道完成 ✅ 产出 output.mp4 + metadata.json，待上层上传")
 	return outputPath, nil
 }
 
@@ -678,7 +678,7 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "DramaMate %s\n用法: %s <input.mp4>\n产出 output.mp4 + metadata.json 到 WorkDir，上传由 assa 负责。\n", version, filepath.Base(os.Args[0]))
+		fmt.Fprintf(os.Stderr, "DramaMate %s\n用法: %s <input.mp4>\n产出 output.mp4 + metadata.json 到 WorkDir；上传不在本工具范围。\n", version, filepath.Base(os.Args[0]))
 		os.Exit(2)
 	}
 	if a := os.Args[1]; a == "version" || a == "-v" || a == "--version" {

@@ -4,7 +4,7 @@
 
 `DramaMate` 把一条中文短剧 MP4，自动加工成带英文硬字幕的竖屏成片，并生成发布用的标题/标签元数据。整条管道用 Go 编写，视频处理直接调用本地 `ffmpeg`，转录/翻译走 OpenAI 兼容接口（NewAPI 转发）。
 
-**职责边界**：DramaMate 只负责「加工」，产出 `output.mp4` + `metadata.json` 两个工件；**上传/发布由下游 assa 产品负责**，本项目不涉及 OAuth/平台 API。
+**职责边界**：DramaMate 只负责「加工」，产出 `output.mp4` + `metadata.json` 两个工件；**上传/发布不在本项目范围**，由上层调用方处理（不涉及 OAuth/平台 API）。
 
 ```
 输入 MP4
@@ -14,7 +14,7 @@
                     └─[4] ffmpeg 硬烧录 + 竖屏 + 去重 → output.mp4
                           └─[5] LLM 生成标题/标签        → metadata.json
                                                           ↓
-                                              （交给 assa 上传发布）
+                                              （交给上层调用方上传发布）
 ```
 
 ## 特性
@@ -109,7 +109,7 @@ dramamate <input.mp4>
 
 ```
 output.mp4       # 加工后的成片
-metadata.json    # 标题/简介/标签/成片路径，供 assa 上传消费
+metadata.json    # 标题/简介/标签/成片路径，供上层调用方上传消费
 audio.mp3 en.srt # 中间产物
 ```
 
@@ -134,7 +134,7 @@ audio.mp3 en.srt # 中间产物
 | 4 烧录去重 | `burnSubtitleAndDedup` | ✅ 真实实现（6 画布模式） |
 | 5 元数据生成 | `generateMetadata` → `writeMetadata` | ✅ 真实实现 / 无 Key 降级 Mock |
 
-> 上传/发布不在本项目范围 —— 由 assa 产品读取 `output.mp4` + `metadata.json` 完成。
+> 上传/发布不在本项目范围 —— 由上层调用方读取 `output.mp4` + `metadata.json` 完成。
 
 ## 避坑提示
 
@@ -153,7 +153,7 @@ audio.mp3 en.srt # 中间产物
 - [ ] 源片硬字幕去除（OCR 定位 + 遮盖/裁切）
 - [ ] caption 模式字幕位置微调（沉入色条中央）
 - [ ] 批量队列 + Goroutine 并发调度
-- [ ] 与 assa 的工件交接规范（metadata schema 版本化）
+- [ ] 工件交接规范（metadata schema 版本化）
 
 ## 项目结构
 
