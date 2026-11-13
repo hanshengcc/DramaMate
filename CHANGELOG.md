@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-14
+
+### Fixed
+- 模块路径改为 `github.com/hanshengcc/DramaMate`（原为 `github.com/DramaMate`，与仓库地址不符），
+  `go install github.com/hanshengcc/DramaMate@latest` 现可直接安装。
+- README 中的克隆地址更正为 `hanshengcc/DramaMate`。
+
 ## [0.2.0] - 2026-06-01
 
 ### Added
