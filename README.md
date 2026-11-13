@@ -49,7 +49,11 @@ ffmpeg -filters | grep subtitles
 ## 快速开始
 
 ```bash
-git clone https://github.com/DramaMate/DramaMate.git
+# 方式一：直接安装（二进制名为 DramaMate，位于 $(go env GOPATH)/bin）
+go install github.com/hanshengcc/DramaMate@latest
+
+# 方式二：从源码构建
+git clone https://github.com/hanshengcc/DramaMate.git
 cd DramaMate
 go build -o dramamate .
 ```
